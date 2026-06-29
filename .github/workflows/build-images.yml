@@ -62,8 +62,10 @@ jobs:
           cd docker/
           bash create_docker_image.sh "$core_tag"
           
-          # Save the built image to a tar archive for the test job
-          docker save -o /tmp/i2b2-core-server.tar ${docker_username}/${docker_reponame}:$core_tag
+          export BUILT_IMAGE="${docker_username}/${docker_reponame}:i2b2-core-server_$core_tag"
+          
+          echo "Saving image: $BUILT_IMAGE"
+          docker save -o /tmp/i2b2-core-server.tar "$BUILT_IMAGE"
 
       # Upload the tarball as an artifact
       - name: Upload Image Artifact
