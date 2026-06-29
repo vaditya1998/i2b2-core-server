@@ -26,7 +26,7 @@ cd $CORE_SERVER_REPO/docker/configuration;
 bash customization/download_drivers.sh
 
 docker build -t $docker_username/$docker_reponame:i2b2-core-server_$CORE_SERVER_TAG .
-docker push $docker_username/$docker_reponame:i2b2-core-server_$CORE_SERVER_TAG
+# docker push $docker_username/$docker_reponame:i2b2-core-server_$CORE_SERVER_TAG
 
 #for multi-platform build - it will build and publish the image
 # docker buildx build --platform linux/amd64,linux/arm64 -t $docker_username/$docker_reponame:i2b2-core-server-multibuild --push "configuration/"

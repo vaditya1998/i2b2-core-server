@@ -27,8 +27,20 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
+      # Check if secrets exist and output a boolean flag
+      - name: Check for Docker Secrets
+        id: secret-check
+        run: |
+          if [ -n "${{ secrets.DOCKER_LOGIN_TOKEN }}" ]; then
+            echo "has_secrets=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_secrets=false" >> $GITHUB_OUTPUT
+          fi
+
+      # Only attempt login if secrets are present
       - name: Login to Docker Registry
-        uses: docker/login-action@v2
+        if: steps.secret-check.outputs.has_secrets == 'true'
+        uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_HOST }}
           password: ${{ secrets.DOCKER_LOGIN_TOKEN }}
@@ -37,19 +49,29 @@ jobs:
         id: vars
         run: |
           echo "core_tag=${{ github.ref_name }}" >> $GITHUB_ENV
-          echo "Using tag: $core_tag"
+          echo "Using tag: ${{ github.ref_name }}"
 
-      - name: Build and Push image
+      - name: Build, Save, and conditionally Push image
         run: |
-          # Fails the script immediately if a command exits with a non-zero status
           set -e 
           
-          export CORE_SERVER_TAG="$core_tag"
-          export docker_username=${{ secrets.DOCKER_HOST }}
-          export docker_reponame=${{ secrets.DOCKER_REPO }}
+          # Provide local fallbacks if secrets are missing during a fork/clone run
+          export docker_username=${{ secrets.DOCKER_HOST || 'localuser' }}
+          export docker_reponame=${{ secrets.DOCKER_REPO || 'i2b2-core' }}
           
           cd docker/
-          bash create_docker_image.sh "$CORE_SERVER_TAG"
+          bash create_docker_image.sh "$core_tag"
+          
+          # Save the built image to a tar archive for the test job
+          docker save -o /tmp/i2b2-core-server.tar ${docker_username}/${docker_reponame}:$core_tag
+
+      # Upload the tarball as an artifact
+      - name: Upload Image Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: i2b2-docker-image
+          path: /tmp/i2b2-core-server.tar
+          retention-days: 1 # Short retention to save GitHub storage space
 
   test:   
     name: Run DB Tests
@@ -58,20 +80,42 @@ jobs:
     environment: dev
     
     strategy:
-      fail-fast: false # Prevents one failing DB test from cancelling the others
+      fail-fast: false
       matrix:
         db: [mssql, pg, oracle]
 
     steps:
-      # Checkout the target test repository directly to save time writing clone scripts
       - name: Checkout Test Repository
         uses: actions/checkout@v4
         with:
           repository: i2b2/i2b2-docker
           path: i2b2-docker
 
+      # Download the tarball from the build job
+      - name: Download Image Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: i2b2-docker-image
+          path: /tmp
+
+      # Load the image into the local Docker daemon
+      - name: Load Docker Image
+        run: |
+          docker load -i /tmp/i2b2-core-server.tar
+          docker images
+
+      - name: Check for Docker Secrets
+        id: secret-check
+        run: |
+          if [ -n "${{ secrets.DOCKER_LOGIN_TOKEN }}" ]; then
+            echo "has_secrets=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_secrets=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Login to Docker Registry
-        uses: docker/login-action@v2
+        if: steps.secret-check.outputs.has_secrets == 'true'
+        uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_HOST }}
           password: ${{ secrets.DOCKER_LOGIN_TOKEN }}          
@@ -81,11 +125,12 @@ jobs:
           set -e
           cd i2b2-docker/${{ matrix.db }}
 
-          export docker_username=${{ secrets.DOCKER_HOST }}
-          export docker_reponame=${{ secrets.DOCKER_REPO }}
-
-          # We can pull the ref_name dynamically or pass it from the build job outputs
+          # Ensure the test script references the same fallback names used in the build job
+          export docker_username=${{ secrets.DOCKER_HOST || 'localuser' }}
+          export docker_reponame=${{ secrets.DOCKER_REPO || 'i2b2-core' }}
           export core_tag=${{ github.ref_name }}
+
           echo "Running ${{ matrix.db }} test cases for tag: $core_tag"
           
-          bash test_case.sh "$core_tag" ${{ inputs.database_image_branch }}
+          # Safely default inputs.database_image_branch to 'master' for push events
+          bash test_case.sh "$core_tag" "${{ inputs.database_image_branch || 'master' }}"
