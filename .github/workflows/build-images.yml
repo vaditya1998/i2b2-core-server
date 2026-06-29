@@ -90,7 +90,7 @@ jobs:
       - name: Checkout Test Repository
         uses: actions/checkout@v4
         with:
-          repository: i2b2/i2b2-docker
+          repository: vaditya1998/i2b2-docker
           path: i2b2-docker
 
       # Download the tarball from the build job
@@ -123,16 +123,19 @@ jobs:
           password: ${{ secrets.DOCKER_LOGIN_TOKEN }}          
           
       - name: Run Test Cases
+        env:
+          # Map the job output to a local environment variable
+          HAS_SECRETS: ${{ needs.build.outputs.ci_has_secrets }}
         run: |
           set -e
           cd i2b2-docker/${{ matrix.db }}
 
-          # Ensure the test script references the same fallback names used in the build job
           export docker_username=${{ secrets.DOCKER_HOST || 'localuser' }}
           export docker_reponame=${{ secrets.DOCKER_REPO || 'i2b2-core' }}
-          export core_tag=${{ github.ref_name }}
+          
+          # Maintain the tag prefix fix from earlier
+          # export core_tag="i2b2-core-server_${{ github.ref_name }}"
 
           echo "Running ${{ matrix.db }} test cases for tag: $core_tag"
           
-          # Safely default inputs.database_image_branch to 'master' for push events
           bash test_case.sh "$core_tag" "${{ inputs.database_image_branch || 'master' }}"
