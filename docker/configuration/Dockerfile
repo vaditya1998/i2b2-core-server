@@ -5,7 +5,7 @@ ENV TZ=America/New_York
 # WildFly setup
 ENV JBOSS_HOME=/opt/jboss/wildfly
 ENV PATH=$PATH:$JBOSS_HOME/bin
-ENV WILDFLY_VERSION=37.0.1.Final
+ENV WILDFLY_VERSION=40.0.1.Final
 
 # Install everything in one layer (faster + smaller)
 RUN apt-get update && \
